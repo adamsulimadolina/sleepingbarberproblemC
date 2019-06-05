@@ -25,7 +25,7 @@ int haircutTime = 2; // time of single haircut (1s --> haircutTime)
 int customerTime = 8; // after customerTime, customer enters waiting room (1 --> customerTime)
 bool debug = false; // boolean variable which allows to write lists
 bool finished = false; // boolean variable which determine if barber finished his work
-int activeCustomer = -1 // variable which contains active customer's id, -1 if no one is active
+int activeCustomer = -1; // variable which contains active customer's id, -1 if no one is active
 
 
 void WaitTime(int time)
@@ -107,7 +107,7 @@ void RemoveCustomer(int id)
 
 void *Customer (void *customer_id)
 {
-	wait(customerTime);
+	WaitTime(customerTime);
 	int id = *(int*)customer_id;
 	pthread_mutex_lock(&waitingRoom);
 	if(chairs>0)
@@ -152,7 +152,7 @@ void *Barber()
 			chairs++;
 			pthread_mutex_unlock(&waitingRoom);
 			sem_post(&isBarberFree);
-			wait(haircutTime);
+			WaitTime(haircutTime);
 			printf("Res: %d WRomm: %d/%d [in: %d] - haircut finished.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
 			pthread_mutex_unlock(&chair);
 		}
@@ -212,7 +212,7 @@ int main(int argc, char *argv[])
 
 	for(i=0; i<numberOfCustomers; ++i)
 	{
-		pthread_create(&customersThread[i], NULL, Customer, (void *)&array[i]);
+		pthread_create(&customersThreads[i], NULL, Customer, (void *)&array[i]);
 	}
 	for(i=0; i<numberOfCustomers; ++i)
 	{
