@@ -11,7 +11,7 @@ struct List
 {
 	int customer_id;
 	struct List *next;
-}
+};
 
 sem_t customersReadyToHaircut; // 0 - no one in waiting room, >0 - number of customers waiting for haircut
 sem_t isBarberFree; // 0 - busy, 1 - free
