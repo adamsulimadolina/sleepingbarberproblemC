@@ -2,7 +2,7 @@ OBJ = main.o
 
 
 fryzjer_war: $(OBJ)
-	gcc $(OBJ) -o fryzjer_war -pthread
+	gcc $(OBJ) -o barber -pthread
 
 .PHONY: clean
 clean:

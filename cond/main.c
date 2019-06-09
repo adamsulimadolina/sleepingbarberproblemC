@@ -119,7 +119,7 @@ void *Customer (void *customer_id)
 	if(chairs>0)
 	{
 		chairs--;
-		printf("Res: %d WRomm: %d/%d [in: %d] - place in waiting room has been taken.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
+		printf("Res: %d WRoom: %d/%d [in: %d] - place in waiting room has been taken.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
 		if(debug == true)
 		{
 			PlaceNextWaiting(id);
@@ -134,13 +134,14 @@ void *Customer (void *customer_id)
 		pthread_mutex_unlock(&chair);
 		pthread_mutex_lock(&waitingRoom);
 		chairs++;
-		printf("Res: %d WRomm: %d/%d [in: %d] - starting haircutting.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
 		activeCustomer = id;
+		printf("Res: %d WRoom: %d/%d [in: %d] - starting haircutting.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
+		
 		if(debug == true)
 		{
 			RemoveCustomer(id);
 		}
-		printf("Res: %d WRomm: %d/%d [in: %d] - current customer is getting his haircut.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
+		printf("Res: %d WRoom: %d/%d [in: %d] - haircut finished.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
 		pthread_mutex_unlock(&waitingRoom); // next customer on the chair
 
 		pthread_cond_signal(&wakeBarber);
@@ -158,7 +159,7 @@ void *Customer (void *customer_id)
 	else
 	{
 		peopleRejected++;
-		printf("Res: %d WRomm: %d/%d [in: %d] - customer did not enter.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
+		printf("Res: %d WRoom: %d/%d [in: %d] - customer did not enter.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
 		if(debug==true)
 		{
 			PlaceNextRejected(id);
@@ -188,7 +189,7 @@ void *Barber()
 int main(int argc, char *argv[])
 {
 	srand(time(NULL));
-	sstatic struct option parameters[] =
+	static struct option parameters[] =
 	{
 		{"customer", required_argument, NULL, 'k'},
 		{"chairs", required_argument, NULL, 'r'},

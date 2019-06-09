@@ -113,7 +113,7 @@ void *Customer (void *customer_id)
 	if(chairs>0)
 	{
 		chairs--;
-		printf("Res: %d WRomm: %d/%d [in: %d] - place in waiting room has been taken.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
+		printf("Res: %d WRoom: %d/%d [in: %d] - place in waiting room has been taken.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
 		if(debug == true)
 		{
 			PlaceNextWaiting(id);
@@ -123,7 +123,7 @@ void *Customer (void *customer_id)
 		sem_wait(&isBarberFree); // waiting for finishing current haircut
 		pthread_mutex_lock(&chair); // next customer on the chair
 		activeCustomer = id;
-		printf("Res: %d WRomm: %d/%d [in: %d] - starting haircutting.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
+		printf("Res: %d WRoom: %d/%d [in: %d] - starting haircutting.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
 		if(debug == true)
 		{
 			RemoveCustomer(id);
@@ -133,7 +133,7 @@ void *Customer (void *customer_id)
 	{
 		pthread_mutex_unlock(&waitingRoom);
 		peopleRejected++;
-		printf("Res: %d WRomm: %d/%d [in: %d] - customer did not enter.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
+		printf("Res: %d WRoom: %d/%d [in: %d] - customer did not enter.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
 		if(debug==true)
 		{
 			PlaceNextRejected(id);
@@ -153,7 +153,7 @@ void *Barber()
 			pthread_mutex_unlock(&waitingRoom);
 			sem_post(&isBarberFree);
 			WaitTime(haircutTime);
-			printf("Res: %d WRomm: %d/%d [in: %d] - haircut finished.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
+			printf("Res: %d WRoom: %d/%d [in: %d] - haircut finished.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
 			pthread_mutex_unlock(&chair);
 		}
 	}
