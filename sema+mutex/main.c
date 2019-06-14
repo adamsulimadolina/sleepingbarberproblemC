@@ -68,7 +68,7 @@ void PlaceNextRejected(int id)
 	temp->customer_id = id;
 	temp->next = rejected;
 	rejected = temp;
-	WriteRejected();
+	if(debug==true)WriteRejected();
 }
 
 void PlaceNextWaiting(int id)
@@ -77,7 +77,7 @@ void PlaceNextWaiting(int id)
 	temp->customer_id = id;
 	temp->next = waiting;
 	waiting = temp;
-	WriteWaiting();
+	if(debug==true)WriteWaiting();
 }
 
 void RemoveCustomer(int id)
@@ -103,7 +103,7 @@ void RemoveCustomer(int id)
 		pop = temp;
 		temp = temp->next;
 	}
-	WriteWaiting();
+	if(debug==true)WriteWaiting();
 }
 
 int Pop()
