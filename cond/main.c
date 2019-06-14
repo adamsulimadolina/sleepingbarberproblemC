@@ -6,6 +6,8 @@
 #include <stdbool.h>
 #include <getopt.h>
 #include <unistd.h>
+#include <string.h>
+#include <errno.h>
 
 struct List
 {
@@ -22,16 +24,18 @@ int customer_time = 8;
 int haircut_time = 2;
 int rejected_number = 0;
 bool debug = false;
+bool *next_cut;
 bool finished = false;
 volatile int being_cut = -1;
 
 pthread_cond_t *call_customer;
 pthread_cond_t wake_barber;
+pthread_cond_t empty_chair;
 
 pthread_mutex_t mutex_queue;
-pthread_mutex_t mutex_queue_length;
+pthread_mutex_t mutex_next;
 pthread_mutex_t mutex_being_cut;
-pthread_mutex_t mutex_rejected;
+pthread_mutex_t mutex_print;
 pthread_mutex_t mutex_rejected_number;
 
 void WaitTime(int time)
@@ -97,12 +101,10 @@ void PlaceNextWaiting(int id)
 		while(temp -> next != NULL);
 		temp -> next = new;
 	}
-	pthread_mutex_lock(&mutex_rejected_number);
-	pthread_mutex_lock(&mutex_being_cut);
+	pthread_mutex_lock(&mutex_print);
 	printf("Res: %d WRoom: %d/%d [in: %d] - place in waiting room has been taken.\n",
 		rejected_number, queue_length, chairs_number, being_cut);
-	pthread_mutex_unlock(&mutex_being_cut);
-	pthread_mutex_unlock(&mutex_rejected_number);
+	pthread_mutex_unlock(&mutex_print);
 	if(debug == true)
 	{
 		WriteWaiting();
@@ -124,41 +126,59 @@ int PopWaiting()
 
 void *Customer (void *customer_id)
 {
-	// WaitTime(customer_time);
+	WaitTime(customer_time);
 	int id = *(int*)customer_id;
-	pthread_mutex_lock(&mutex_queue_length);
+	printf("%s\n", "nowy klient");
+	pthread_mutex_lock(&mutex_queue);
+	printf("%s\n", "nowy klient mutex");
 	if(queue_length<chairs_number)
 	{
 		queue_length++;
-		pthread_mutex_lock(&mutex_queue);
+		printf("%s\n", "przed wpisaniem");
 		PlaceNextWaiting(id);
-		pthread_mutex_unlock(&mutex_queue);
+		printf("%s\n", "po wpisaniu");
 		pthread_cond_broadcast(&wake_barber);
-		pthread_mutex_unlock(&mutex_queue_length);
+		printf("%s\n", "unlock mutexu");
+		pthread_mutex_unlock(&mutex_queue);
+		printf("%s\n", "przed broadcastem");
+		printf("%s\n", "po broadcascie");
+
+		printf("%s\n", "klient przed lockiem");
+		pthread_mutex_lock(&mutex_next);
+		while (next_cut[id] != true)
+		{
+			// printf("%s\n", "klient czeka na sygnał barber");
+			pthread_cond_wait(&call_customer[id], &mutex_next);
+			// printf("%s\n", "klient dostał syganał barbera");
+		}
+		pthread_mutex_unlock(&mutex_next);
 
 		pthread_mutex_lock(&mutex_being_cut);
+		printf("%s\n", "klient po locku");
 		while (being_cut != id)
 		{
-    		pthread_cond_wait(&call_customer[id], &mutex_being_cut);
+			printf("%s\n", "klient czeka na sygnał barber");
+			pthread_cond_wait(&empty_chair, &mutex_being_cut);
+			printf("%s\n", "klient dostał syganał barbera");
 		}
     	// praca watku tutaj
 		pthread_mutex_unlock(&mutex_being_cut);
+		printf("%s\n", "klient wychodzi");
+
 	}
 	else
 	{
 		pthread_mutex_lock(&mutex_rejected_number);
 		rejected_number++;
-		pthread_mutex_lock(&mutex_being_cut);
+		pthread_mutex_unlock(&mutex_rejected_number);
+		pthread_mutex_lock(&mutex_print);
 		printf("Res: %d WRoom: %d/%d [in: %d] - customer did not enter.\n",
 			rejected_number, queue_length, chairs_number, being_cut);
-		pthread_mutex_unlock(&mutex_being_cut);
-		pthread_mutex_unlock(&mutex_rejected_number);
-		pthread_mutex_unlock(&mutex_queue_length);
+		pthread_mutex_unlock(&mutex_print);
+		pthread_mutex_unlock(&mutex_queue);
 		if(debug == true)
 		{
-			pthread_mutex_lock(&mutex_rejected);
 			PlaceNextRejected(id);
-			pthread_mutex_unlock(&mutex_rejected);
 		}
 	}
 }
@@ -169,40 +189,43 @@ void *Barber()
 	while(finished == false)
 	{
 		printf("%s\n", "barber przed lockiem\n");
-		pthread_mutex_lock(&mutex_queue_length);
+		pthread_mutex_lock(&mutex_queue);
 		printf("%s\n", "barber po locku\n");
 
 		while (queue_length <= 0)
 		{
-			pthread_cond_wait(&wake_barber, &mutex_queue_length);
+			printf("%s\n", "przed condem");
+			pthread_cond_wait(&wake_barber, &mutex_queue);
 			printf("%s%d\n", "queue_length", queue_length);
 		}
 		queue_length--;
-		pthread_mutex_lock(&mutex_queue);
+		printf("%s\n", "198");
 		id = PopWaiting();
 		pthread_mutex_unlock(&mutex_queue);
+		pthread_mutex_lock(&mutex_next);
+		next_cut[id] = true;
+		pthread_cond_broadcast(&call_customer[id]);
+		pthread_mutex_unlock(&mutex_next);
 		pthread_mutex_lock(&mutex_being_cut);
 		being_cut = id;
-		pthread_mutex_lock(&mutex_rejected_number);
+		pthread_cond_broadcast(&empty_chair);
+		pthread_mutex_unlock(&mutex_being_cut);
+		pthread_mutex_lock(&mutex_queue);
+		pthread_mutex_lock(&mutex_print);
 		printf("Res: %d WRoom: %d/%d [in: %d] - starting haircutting.\n",
 			rejected_number, queue_length, chairs_number, being_cut);
-		pthread_mutex_unlock(&mutex_rejected_number);
-		pthread_cond_broadcast(&call_customer[id]);
-		pthread_mutex_unlock(&mutex_being_cut);
-		pthread_mutex_unlock(&mutex_queue_length);
-		// WaitTime(haircut_time);
-		printf("%s\n", "barber przed drugim lockiem\n");
-		pthread_mutex_lock(&mutex_queue_length);
-		printf("%s\n", "barber przed lockiem rejected_number\n");
-		pthread_mutex_lock(&mutex_rejected_number);
-		printf("%s\n", "barber przed drugim lockiem being_cut\n");
+		// pthread_mutex_unlock(&mutex_rejected_number);
+		pthread_mutex_unlock(&mutex_print);
+		pthread_mutex_unlock(&mutex_queue);
+		// pthread_mutex_unlock(&mutex_being_cut);
 
-		pthread_mutex_lock(&mutex_being_cut);
+		WaitTime(haircut_time);
+
+		printf("%s\n", "barber przed drugim lockiem\n");
+		pthread_mutex_lock(&mutex_print);
 		printf("Res: %d WRoom: %d/%d [in: %d] - haircut finished.\n",
 			rejected_number, queue_length, chairs_number, being_cut);
-		pthread_mutex_unlock(&mutex_being_cut);
-		pthread_mutex_unlock(&mutex_rejected_number);
-		pthread_mutex_unlock(&mutex_queue_length);
+		pthread_mutex_unlock(&mutex_print);
 	}
 	printf("Barber is going to his home.\n");
 }
@@ -220,6 +243,7 @@ int main(int argc, char *argv[])
 	};
 	int customers_number = 20;
 	int choice = 0;
+	int error;
 	while((choice = getopt_long(argc, argv, "k:r:c:f:d",parameters,NULL)) != -1)
 	{
 		switch(choice)
@@ -243,52 +267,174 @@ int main(int argc, char *argv[])
 	}
 
 	pthread_t *customersThreads = (pthread_t *)malloc(sizeof(pthread_t) * customers_number);
+	if(customersThreads == NULL)
+	{
+		printf("%s %s\n", "Malloc error:", strerror(errno));
+		return 0;
+	}
 	pthread_t barberThread;
 
 	int *array = (int *)malloc(sizeof(int) * customers_number);
+	if(array == NULL)
+	{
+		printf("%s %s\n", "Malloc error:", strerror(errno));
+		return 0;
+	}
+	next_cut = (bool *)malloc(sizeof(int) * customers_number);
+	if(next_cut == NULL)
+	{
+		printf("%s %s\n", "Malloc error:", strerror(errno));
+		return 0;
+	}
     call_customer = (pthread_cond_t *)malloc(sizeof(pthread_cond_t) * customers_number);
-
+	if(call_customer == NULL)
+	{
+		printf("%s %s\n", "Malloc error:", strerror(errno));
+		return 0;
+	}
 	int i;
 	for(i=0; i<customers_number; i++)
 	{
 		array[i] = i;
-        pthread_cond_init(&call_customer[i], NULL);
+		next_cut[i] = false;
+		error = pthread_cond_init(&call_customer[i], NULL);
+        if(error != 0)
+		{
+			printf("%s %d\n", "Conditional variable initialization error:", error);
+			return 0;
+		}
 	}
 
-	pthread_cond_init(&wake_barber, NULL);
+	error = pthread_cond_init(&wake_barber, NULL);
+	if(error != 0)
+	{
+		printf("%s %d\n", "Conditional variable initialization error:", error);
+		return 0;
+	}
+	error = pthread_cond_init(&empty_chair, NULL);
+	if(error != 0)
+	{
+		printf("%s %d\n", "Conditional variable initialization error:", error);
+		return 0;
+	}
+	error = pthread_mutex_init(&mutex_queue, NULL);
+	if(error != 0)
+	{
+		printf("%s %d\n", "Mutex initialization error:", error);
+		return 0;
+	}
+	error = pthread_mutex_init(&mutex_next, NULL);
+	if(error != 0)
+	{
+		printf("%s %d\n", "Mutex initialization error:", error);
+		return 0;
+	}
+	error = pthread_mutex_init(&mutex_being_cut, NULL);
+	if(error != 0)
+	{
+		printf("%s %d\n", "Mutex initialization error:", error);
+		return 0;
+	}
+	error = pthread_mutex_init(&mutex_print, NULL);
+	if(error != 0)
+	{
+		printf("%s %d\n", "Mutex initialization error:", error);
+		return 0;
+	}
+	error = pthread_mutex_init(&mutex_rejected_number, NULL);
+	if(error != 0)
+	{
+		printf("%s %d\n", "Mutex initialization error:", error);
+		return 0;
+	}
 
-	pthread_mutex_init(&mutex_queue, NULL);
-	pthread_mutex_init(&mutex_queue_length, NULL);
-	pthread_mutex_init(&mutex_being_cut, NULL);
-	pthread_mutex_init(&mutex_rejected, NULL);
-	pthread_mutex_init(&mutex_rejected_number, NULL);
-
-	pthread_create(&barberThread, NULL, Barber, NULL);
+	error = pthread_create(&barberThread, NULL, Barber, NULL);
+	if(error != 0)
+	{
+		printf("%s %d\n", "Thread creation error:", error);
+		return 0;
+	}
 
 	sleep(1);
 
 	for(i=0; i<customers_number; ++i)
 	{
-		pthread_create(&customersThreads[i], NULL, Customer, (void *)&array[i]);
+		error = pthread_create(&customersThreads[i], NULL, Customer, (void *)&array[i]);
+		if(error != 0)
+		{
+			printf("%s %d\n", "Thread creation error:", error);
+			return 0;
+		}
 	}
 
 	for(i=0; i<customers_number; ++i)
 	{
-		pthread_join(customersThreads[i], NULL);
+		error = pthread_join(customersThreads[i], NULL);
+		if(error != 0)
+		{
+			printf("%s %d\n", "Thread join error:", error);
+			return 0;
+		}
 	}
 	finished = true;
 
-	pthread_join(barberThread, NULL);
-	pthread_mutex_destroy(&mutex_queue);
-	pthread_mutex_destroy(&mutex_queue_length);
-	pthread_mutex_destroy(&mutex_being_cut);
-	pthread_mutex_destroy(&mutex_rejected);
-	pthread_mutex_destroy(&mutex_rejected_number);
+	error = pthread_join(barberThread, NULL);
+	if(error != 0)
+	{
+		printf("%s %d\n", "Thread join error:", error);
+		return 0;
+	}
+	error = pthread_mutex_destroy(&mutex_queue);
+	if(error != 0)
+	{
+		printf("%s %d\n", "Mutex destruction error:", error);
+		return 0;
+	}
+	error = pthread_mutex_destroy(&mutex_next);
+	if(error != 0)
+	{
+		printf("%s %d\n", "Mutex destruction error:", error);
+		return 0;
+	}
+	error = pthread_mutex_destroy(&mutex_being_cut);
+	if(error != 0)
+	{
+		printf("%s %d\n", "Mutex destruction error:", error);
+		return 0;
+	}
+	error = pthread_mutex_destroy(&mutex_print);
+	if(error != 0)
+	{
+		printf("%s %d\n", "Mutex destruction error:", error);
+		return 0;
+	}
+	error = pthread_mutex_destroy(&mutex_rejected_number);
+	if(error != 0)
+	{
+		printf("%s %d\n", "Mutex destruction error:", error);
+		return 0;
+	}
     for(i=0; i<customers_number; ++i)
     {
-        pthread_cond_destroy(&call_customer[i]);
+        error = pthread_cond_destroy(&call_customer[i]);
+		if(error != 0)
+		{
+			printf("%s %d\n", "Conditional variable destruction error:", error);
+			return 0;
+		}
     }
-	pthread_cond_destroy(&wake_barber);
+	error = pthread_cond_destroy(&wake_barber);
+	if(error != 0)
+	{
+		printf("%s %d\n", "Conditional variable destruction error:", error);
+		return 0;
+	}
+	error = pthread_cond_destroy(&empty_chair);
+	if(error != 0)
+	{
+		printf("%s %d\n", "Conditional variable destruction error:", error);
+		return 0;
+	}
 	free(rejected);
 	free(queue);
 	return 0;
