@@ -13,26 +13,26 @@ struct List
 	struct List *next;
 };
 
-pthread_cond_t freeChairs; // free chairs in waiting room
-pthread_cond_t wakeBarber; // signal to wake up barber
-pthread_cond_t finishedHaircut; // signal to customer, that barber finished his haircut
-pthread_cond_t isBarberFree; // variable that determines if barber is free at this moment
-bool finished = false; // boolean variable that checks if every customer was haircuted
-bool isChairTaken = false; // is someone on the barber's chair
-bool isBarberSleep = false;
-pthread_mutex_t chair; // locks chair every time when customer is getting his haircut, frees upon finishing
-pthread_mutex_t waitingRoom; // lock waiting room to protect from races
-pthread_mutex_t finishedCustomer; // customer after haircut
-pthread_mutex_t barberState; // protects barber state
+struct List *rejected = NULL;
+struct List *queue = NULL;
 
-int chairs = 10; // number of free chairs in waiting room
-int waitingRoomSize = 10; // number of all chairs in waiting room
-int peopleRejected = 0; // number of ppl who didn't find place in waiting room
-int haircutTime = 2; // time of single haircut (1s --> haircutTime)
-int customerTime = 8; // after customerTime, customer enters waiting room (1 --> customerTime)
-bool debug = false; // boolean variable which allows to write lists
-int activeCustomer = -1; // variable which contains active customer's id, -1 if no one is active
+volatile int queue_length = 0;
+int chairs_number = 10;
+int customer_time = 8;
+int haircut_time = 2;
+int rejected_number = 0;
+bool debug = false;
+bool finished = false;
+volatile int being_cut = -1;
 
+pthread_cond_t *call_customer;
+pthread_cond_t wake_barber;
+
+pthread_mutex_t mutex_queue;
+pthread_mutex_t mutex_queue_length;
+pthread_mutex_t mutex_being_cut;
+pthread_mutex_t mutex_rejected;
+pthread_mutex_t mutex_rejected_number;
 
 void WaitTime(int time)
 {
@@ -40,148 +40,169 @@ void WaitTime(int time)
 	usleep(x);
 }
 
-struct List *rejected = NULL;
-struct List *waiting = NULL;
-
 void WriteRejected()
 {
-	struct List *temp = rejected;
 	printf("Customers that did not enter waiting room: ");
-	while(temp!=NULL)
+	struct List *temp = rejected;
+	while(temp != NULL)
 	{
-		printf("%d ", temp->customer_id);
-		temp = temp->next;
+		printf("%d ", temp -> customer_id);
+		temp = temp -> next;
 	}
 	printf("\n");
 }
 
 void WriteWaiting()
 {
-	struct List *temp = waiting;
 	printf("Customers that are waiting in waiting room: ");
-	while(temp!=NULL)
+	struct List *temp = queue;
+	while(temp != NULL)
 	{
-		printf("%d ", temp->customer_id);
-		temp = temp->next;
+		printf("%d ", temp -> customer_id);
+		temp = temp -> next;
 	}
 	printf("\n");
 }
 
 void PlaceNextRejected(int id)
 {
-	struct List *temp = (struct List*)malloc(sizeof(struct List));
-	temp->customer_id = id;
-	temp->next = rejected;
-	rejected = temp;
-	WriteRejected();
+	struct List *new = (struct List*)malloc(sizeof(struct List));
+	new -> customer_id = id;
+	new -> next = NULL;
+	struct List *temp = rejected;
+	if(temp == NULL)
+	{
+		rejected = new;
+	}
+	else
+	{
+		while(temp -> next != NULL);
+		temp -> next = new;
+	}
+    WriteRejected();
 }
 
 void PlaceNextWaiting(int id)
 {
-	struct List *temp = (struct List*)malloc(sizeof(struct List));
-	temp->customer_id = id;
-	temp->next = waiting;
-	waiting = temp;
-	WriteWaiting();
+	struct List *new = (struct List*)malloc(sizeof(struct List));
+	new -> customer_id = id;
+	new -> next = NULL;
+	struct List *temp = queue;
+	if(temp == NULL)
+	{
+		queue = new;
+	}
+	else
+	{
+		while(temp -> next != NULL);
+		temp -> next = new;
+	}
+	pthread_mutex_lock(&mutex_rejected_number);
+	pthread_mutex_lock(&mutex_being_cut);
+	printf("Res: %d WRoom: %d/%d [in: %d] - place in waiting room has been taken.\n",
+		rejected_number, queue_length, chairs_number, being_cut);
+	pthread_mutex_unlock(&mutex_being_cut);
+	pthread_mutex_unlock(&mutex_rejected_number);
+	if(debug == true)
+	{
+		WriteWaiting();
+	}
 }
 
-void RemoveCustomer(int id)
+int PopWaiting()
 {
-	struct List *temp = waiting;
-	struct List *pop = waiting;
-	while(temp!=NULL)
-	{
-		if(temp->customer_id==id)
-		{
-			if(temp->customer_id == waiting->customer_id)
-			{
-				waiting = waiting->next;
-				free(temp);
-			}
-			else
-			{
-				pop->next = temp->next;
-				free(temp);
-			}
-			break;
-		}
-		pop = temp;
-		temp = temp->next;
-	}
-	WriteWaiting();
+    struct List *temp = queue;
+    if(temp == NULL)
+    {
+        return -1;
+    }
+    int id = temp -> customer_id;
+	queue = temp -> next;
+    free(temp);
+	return id;
 }
 
 void *Customer (void *customer_id)
 {
-	WaitTime(customerTime);
+	// WaitTime(customer_time);
 	int id = *(int*)customer_id;
-	pthread_mutex_lock(&waitingRoom);
-	if(chairs>0)
+	pthread_mutex_lock(&mutex_queue_length);
+	if(queue_length<chairs_number)
 	{
-		chairs--;
-		printf("Res: %d WRoom: %d/%d [in: %d] - place in waiting room has been taken.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
-		if(debug == true)
-		{
-			PlaceNextWaiting(id);
-		}
-		pthread_mutex_unlock(&waitingRoom);
-		pthread_mutex_lock(&chair);
-		if(isChairTaken)
-		{
-			pthread_cond_wait(&isBarberFree, &chair);
-		}
-		isChairTaken = true;
-		pthread_mutex_unlock(&chair);
-		pthread_mutex_lock(&waitingRoom);
-		chairs++;
-		activeCustomer = id;
-		printf("Res: %d WRoom: %d/%d [in: %d] - starting haircutting.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
-		
-		if(debug == true)
-		{
-			RemoveCustomer(id);
-		}
-		printf("Res: %d WRoom: %d/%d [in: %d] - haircut finished.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
-		pthread_mutex_unlock(&waitingRoom); // next customer on the chair
+		queue_length++;
+		pthread_mutex_lock(&mutex_queue);
+		PlaceNextWaiting(id);
+		pthread_mutex_unlock(&mutex_queue);
+		pthread_cond_broadcast(&wake_barber);
+		pthread_mutex_unlock(&mutex_queue_length);
 
-		pthread_cond_signal(&wakeBarber);
-
-		pthread_mutex_lock(&finishedCustomer);
-		pthread_cond_wait(&finishedHaircut, &finishedCustomer);
-		finished = false;
-		pthread_mutex_unlock(&finishedCustomer);
-
-		pthread_mutex_lock(&chair);
-		isChairTaken = false;
-		pthread_mutex_unlock(&chair);
-		pthread_cond_signal(&isBarberFree);
+		pthread_mutex_lock(&mutex_being_cut);
+		while (being_cut != id)
+		{
+    		pthread_cond_wait(&call_customer[id], &mutex_being_cut);
+		}
+    	// praca watku tutaj
+		pthread_mutex_unlock(&mutex_being_cut);
 	}
 	else
 	{
-		peopleRejected++;
-		printf("Res: %d WRoom: %d/%d [in: %d] - customer did not enter.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
-		if(debug==true)
+		pthread_mutex_lock(&mutex_rejected_number);
+		rejected_number++;
+		pthread_mutex_lock(&mutex_being_cut);
+		printf("Res: %d WRoom: %d/%d [in: %d] - customer did not enter.\n",
+			rejected_number, queue_length, chairs_number, being_cut);
+		pthread_mutex_unlock(&mutex_being_cut);
+		pthread_mutex_unlock(&mutex_rejected_number);
+		pthread_mutex_unlock(&mutex_queue_length);
+		if(debug == true)
 		{
+			pthread_mutex_lock(&mutex_rejected);
 			PlaceNextRejected(id);
+			pthread_mutex_unlock(&mutex_rejected);
 		}
-		pthread_mutex_unlock(&waitingRoom);
 	}
 }
 
 void *Barber()
 {
-	pthread_mutex_lock(&barberState);
-	while(!finished)
+	int id;
+	while(finished == false)
 	{
-		pthread_cond_wait(&wakeBarber,&barberState);
-		pthread_mutex_unlock(&barberState);
-		if(!finished)
+		printf("%s\n", "barber przed lockiem\n");
+		pthread_mutex_lock(&mutex_queue_length);
+		printf("%s\n", "barber po locku\n");
+
+		while (queue_length <= 0)
 		{
-			WaitTime(haircutTime);
-			//printf("Res: %d WRomm: %d/%d [in: %d] - haircut finished.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
-			pthread_cond_signal(&finishedHaircut);
+			pthread_cond_wait(&wake_barber, &mutex_queue_length);
+			printf("%s%d\n", "queue_length", queue_length);
 		}
-		else printf("No customers, time to go home...\n");
+		queue_length--;
+		pthread_mutex_lock(&mutex_queue);
+		id = PopWaiting();
+		pthread_mutex_unlock(&mutex_queue);
+		pthread_mutex_lock(&mutex_being_cut);
+		being_cut = id;
+		pthread_mutex_lock(&mutex_rejected_number);
+		printf("Res: %d WRoom: %d/%d [in: %d] - starting haircutting.\n",
+			rejected_number, queue_length, chairs_number, being_cut);
+		pthread_mutex_unlock(&mutex_rejected_number);
+		pthread_cond_broadcast(&call_customer[id]);
+		pthread_mutex_unlock(&mutex_being_cut);
+		pthread_mutex_unlock(&mutex_queue_length);
+		// WaitTime(haircut_time);
+		printf("%s\n", "barber przed drugim lockiem\n");
+		pthread_mutex_lock(&mutex_queue_length);
+		printf("%s\n", "barber przed lockiem rejected_number\n");
+		pthread_mutex_lock(&mutex_rejected_number);
+		printf("%s\n", "barber przed drugim lockiem being_cut\n");
+
+		pthread_mutex_lock(&mutex_being_cut);
+		printf("Res: %d WRoom: %d/%d [in: %d] - haircut finished.\n",
+			rejected_number, queue_length, chairs_number, being_cut);
+		pthread_mutex_unlock(&mutex_being_cut);
+		pthread_mutex_unlock(&mutex_rejected_number);
+		pthread_mutex_unlock(&mutex_queue_length);
 	}
 	printf("Barber is going to his home.\n");
 }
@@ -192,79 +213,83 @@ int main(int argc, char *argv[])
 	static struct option parameters[] =
 	{
 		{"customer", required_argument, NULL, 'k'},
-		{"chairs", required_argument, NULL, 'r'},
+		{"chair", required_argument, NULL, 'r'},
 		{"time_c", required_argument, NULL, 'c'},
 		{"time_b", required_argument, NULL, 'b'},
 		{"debug", no_argument, NULL, 'd'}
 	};
-	int numberOfCustomers = 20;
+	int customers_number = 20;
 	int choice = 0;
 	while((choice = getopt_long(argc, argv, "k:r:c:f:d",parameters,NULL)) != -1)
 	{
 		switch(choice)
 		{
 			case 'k': // number of customers
-						numberOfCustomers = atoi(optarg);
+						customers_number = atoi(optarg);
 						break;
 			case 'r': // number of chairs in waiting room
-						chairs = atoi(optarg);
-						waitingRoomSize = atoi(optarg);
+						chairs_number = atoi(optarg);
 						break;
 			case 'c': // frequency of appending new customer
-						customerTime = atoi(optarg);
+						customer_time = atoi(optarg);
 						break;
 			case 'b': // time of single haircut
-						haircutTime = atoi(optarg);
+						haircut_time = atoi(optarg);
 						break;
 			case 'd':
 						debug=true;
 						break;
 		}
 	}
-	pthread_t *customersThreads = malloc(sizeof(pthread_t)*numberOfCustomers);
+
+	pthread_t *customersThreads = (pthread_t *)malloc(sizeof(pthread_t) * customers_number);
 	pthread_t barberThread;
-	int *array = malloc(sizeof(int)*numberOfCustomers);
+
+	int *array = (int *)malloc(sizeof(int) * customers_number);
+    call_customer = (pthread_cond_t *)malloc(sizeof(pthread_cond_t) * customers_number);
+
 	int i;
-	for(i=0; i<numberOfCustomers; i++)
+	for(i=0; i<customers_number; i++)
 	{
 		array[i] = i;
+        pthread_cond_init(&call_customer[i], NULL);
 	}
 
-	pthread_cond_init(&freeChairs, NULL);
-	pthread_cond_init(&isBarberFree, NULL);
-	pthread_cond_init(&wakeBarber, NULL);
-	pthread_cond_init(&finishedHaircut, NULL);
+	pthread_cond_init(&wake_barber, NULL);
 
-	pthread_mutex_init(&barberState, NULL);
-	pthread_mutex_init(&finishedCustomer, NULL);
-	pthread_mutex_init(&chair, NULL);
-	pthread_mutex_init(&waitingRoom, NULL);
+	pthread_mutex_init(&mutex_queue, NULL);
+	pthread_mutex_init(&mutex_queue_length, NULL);
+	pthread_mutex_init(&mutex_being_cut, NULL);
+	pthread_mutex_init(&mutex_rejected, NULL);
+	pthread_mutex_init(&mutex_rejected_number, NULL);
 
-	pthread_create(&barberThread, 0, Barber, 0);
+	pthread_create(&barberThread, NULL, Barber, NULL);
 
-	for(i=0; i<numberOfCustomers; ++i)
+	sleep(1);
+
+	for(i=0; i<customers_number; ++i)
 	{
-		pthread_create(&customersThreads[i], 0, Customer, (void *)&array[i]);
+		pthread_create(&customersThreads[i], NULL, Customer, (void *)&array[i]);
 	}
-	for(i=0; i<numberOfCustomers; ++i)
+
+	for(i=0; i<customers_number; ++i)
 	{
-		pthread_join(customersThreads[i], 0);
+		pthread_join(customersThreads[i], NULL);
 	}
 	finished = true;
-	pthread_cond_signal(&wakeBarber);
-	pthread_join(barberThread, 0);
 
-	pthread_cond_destroy(&freeChairs);
-	pthread_cond_destroy(&isBarberFree);
-	pthread_cond_destroy(&wakeBarber);
-	pthread_cond_destroy(&finishedHaircut);
-
-	pthread_mutex_destroy(&barberState);
-	pthread_mutex_destroy(&finishedCustomer);
-	pthread_mutex_destroy(&chair);
-	pthread_mutex_destroy(&waitingRoom);
-
+	pthread_join(barberThread, NULL);
+	pthread_mutex_destroy(&mutex_queue);
+	pthread_mutex_destroy(&mutex_queue_length);
+	pthread_mutex_destroy(&mutex_being_cut);
+	pthread_mutex_destroy(&mutex_rejected);
+	pthread_mutex_destroy(&mutex_rejected_number);
+    for(i=0; i<customers_number; ++i)
+    {
+        pthread_cond_destroy(&call_customer[i]);
+    }
+	pthread_cond_destroy(&wake_barber);
 	free(rejected);
-	free(waiting);
+	free(queue);
 	return 0;
 }
