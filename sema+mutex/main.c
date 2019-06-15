@@ -15,7 +15,6 @@ struct List
 
 sem_t customer; // 0 - no one in waiting room, >0 - number of customers waiting for haircut
 sem_t barber; // 0 - busy, 1 - free
-//pthread_mutex_t chair; // locks chair every time when customer is getting his haircut, frees upon finishing
 pthread_mutex_t waitingRoom; // lock waiting room to protect from races
 
 int tmp=0;
@@ -180,12 +179,10 @@ int main(int argc, char *argv[])
 	{
 		{"customer", required_argument, NULL, 'k'},
 		{"chairs", required_argument, NULL, 'r'},
-		{"time_c", required_argument, NULL, 'c'},
-		{"time_b", required_argument, NULL, 'b'},
 		{"debug", no_argument, NULL, 'd'}
 	};
 
-	while((choice = getopt_long(argc, argv, "k:r:c:f:d",parameters,NULL)) != -1)
+	while((choice = getopt_long(argc, argv, "k:f:d",parameters,NULL)) != -1)
 	{
 		switch(choice)
 		{
@@ -195,12 +192,6 @@ int main(int argc, char *argv[])
 			case 'r': // number of chairs in waiting room
 						chairs = atoi(optarg);
 						waitingRoomSize = atoi(optarg);
-						break;
-			case 'c': // frequency of appending new customer
-						customerTime = atoi(optarg);
-						break;
-			case 'b': // time of single haircut
-						haircutTime = atoi(optarg);
 						break;
 			case 'd':
 						debug=true;
