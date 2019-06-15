@@ -1,12 +1,9 @@
 OBJ = main.o
 
 
-fryzjer_war: $(OBJ)
+barber: $(OBJ)
 	gcc $(OBJ) -o barber -pthread
 
 .PHONY: clean
 clean:
 	rm -f *.o
-
-
-
