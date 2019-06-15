@@ -59,6 +59,11 @@ void WriteWaiting()
 void PlaceNextRejected(int id)
 {
 	struct List *temp = (struct List*)malloc(sizeof(struct List));
+	if(temp == NULL)
+	{
+		perror("Can't allocate memory Place next rejected");
+		exit(EXIT_FAILURE);
+	}
 	temp->customer_id = id;
 	temp->next = rejected;
 	rejected = temp;
@@ -68,6 +73,11 @@ void PlaceNextRejected(int id)
 void PlaceNextWaiting(int id)
 {
 	struct List *temp = (struct List*)malloc(sizeof(struct List));
+	if(temp == NULL)
+	{
+		perror("Can't allocate memory PlaceNextWaiting");
+		exit(EXIT_FAILURE);
+	}
 	temp->customer_id = id;
 	temp->next = waiting;
 	waiting = temp;
@@ -78,6 +88,11 @@ void RemoveCustomer(int id)
 {
 	struct List *temp = waiting;
 	struct List *pop = waiting;
+	if(temp == NULL)
+	{
+		perror("Can't remove customer");
+		exit(EXIT_FAILURE);
+	}
 	while(temp!=NULL)
 	{
 		if(temp->customer_id==id)
@@ -103,6 +118,11 @@ void RemoveCustomer(int id)
 int Top()
 {
 	struct List *tmp = waiting;
+	if(tmp == NULL)
+	{
+		perror("Can't top");
+		//exit(EXIT_FAILURE);
+	}
 	while(tmp->next!=NULL)
 	{
 		tmp=tmp->next;
@@ -119,10 +139,6 @@ void *Customer (void *customer_id)
 		chairs--;
 		printf("Res: %d WRoom: %d/%d [in: %d] - place in waiting room has been taken.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
 		PlaceNextWaiting(id);
-		if(debug == true)
-		{
-			WriteWaiting();
-		}
 		sem_post(&customer);
 		pthread_mutex_unlock(&waitingRoom);
 		sem_wait(&barber);
@@ -205,9 +221,18 @@ int main(int argc, char *argv[])
 		perror("\n\nEXIT -> Can't allocate memory for customer threads");
 		exit(EXIT_FAILURE);
 	}
-
+	if(customersThreads==NULL)
+	{
+		perror("\n\nEXIT -> Can't allocate memory for customer threads.");
+		exit(EXIT_FAILURE);
+	}
 
 	if((array = malloc(sizeof(int)*numberOfCustomers))==NULL)
+	{
+		perror("\n\nEXIT -> Can't allocate memory for threads array.");
+		exit(EXIT_FAILURE);
+	}
+	if(array == NULL)
 	{
 		perror("\n\nEXIT -> Can't allocate memory for threads array.");
 		exit(EXIT_FAILURE);
@@ -268,10 +293,27 @@ int main(int argc, char *argv[])
 		perror("\n\nEXIT -> Can't join barber thread");
 		exit(EXIT_FAILURE);
 	}
-	pthread_mutex_destroy(&waitingRoom);
-	sem_destroy(&customer);
-	sem_destroy(&barber);
-	free(rejected);
-	free(waiting);
+	status = pthread_mutex_destroy(&waitingRoom);
+	if(status != 0)
+	{
+		perror("\n\nEXIT -> Can't destroy waiting room mutex");
+		exit(EXIT_FAILURE);
+	}
+	status = sem_destroy(&customer);
+	if(status != 0)
+	{
+		perror("\n\nEXIT -> Can't destroy customer semaphore");
+		exit(EXIT_FAILURE);
+	}
+	status = sem_destroy(&barber);
+	if(status != 0)
+	{
+		perror("\n\nEXIT -> Can't destroy barber semaphore");
+		exit(EXIT_FAILURE);
+	}
+	//if(waiting != NULL)
+	//free(waiting);
+	//if(rejected != NULL)
+	//free(rejected);
 	return 0;
 }
