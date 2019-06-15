@@ -18,6 +18,8 @@ struct List
 struct List *rejected = NULL;
 struct List *queue = NULL;
 
+int error;
+
 volatile int queue_length = 0;
 int chairs_number = 10;
 int customer_time = 8;
@@ -115,14 +117,12 @@ void PlaceNextWaiting(int id)
 		}
 		temp -> next = new;
 	}
-	pthread_mutex_lock(&mutex_print);
 	printf("Res: %d WRoom: %d/%d [in: %d] - place in waiting room has been taken.\n",
 		rejected_number, queue_length, chairs_number, being_cut);
 	if(debug == true)
 	{
 		WriteWaiting();
 	}
-	pthread_mutex_unlock(&mutex_print);
 }
 
 int PopWaiting()
@@ -142,20 +142,47 @@ void *Customer (void *customer_id)
 {
 	// WaitTime(customer_time);
 	int id = *(int*)customer_id;
-	pthread_mutex_lock(&mutex_queue);
+	error = pthread_mutex_lock(&mutex_queue);
+	if(error != 0)
+	{
+		printf("%s %d\n", "Mutex lock error:", error);
+		exit(EXIT_FAILURE);
+	}
 	if(queue_length<chairs_number)
 	{
 		queue_length++;
 		PlaceNextWaiting(id);
-		pthread_cond_broadcast(&wake_barber);
-		pthread_mutex_unlock(&mutex_queue);
+		// klient zajął miejsce i wysyła sygnał fryzjerowi, że jest gotowy na strzyżenie
+		error = pthread_cond_broadcast(&wake_barber);
+		if(error != 0)
+		{
+			printf("%s %d\n", "Conditional variable broadcast error:", error);
+			exit(EXIT_FAILURE);
+		}
+		error = pthread_mutex_unlock(&mutex_queue);
+		if(error != 0)
+		{
+			printf("%s %d\n", "Mutex unlock error:", error);
+			exit(EXIT_FAILURE);
+		}
 
-		pthread_mutex_lock(&mutex_next[id]);
+		error = pthread_mutex_lock(&mutex_next[id]);
+		if(error != 0)
+		{
+			printf("%s %d\n", "Mutex lock error:", error);
+			exit(EXIT_FAILURE);
+		}
 		while (next_cut[id] != true)
 		{
+			// klient czeka na wezwanie na fotel fryzjerski
 			pthread_cond_wait(&call_customer[id], &mutex_next[id]);
 		}
-		pthread_mutex_unlock(&mutex_next[id]);
+		error = pthread_mutex_unlock(&mutex_next[id]);
+		if(error != 0)
+		{
+			printf("%s %d\n", "Mutex unlock error:", error);
+			exit(EXIT_FAILURE);
+		}
 	}
 	else
 	{
@@ -166,7 +193,12 @@ void *Customer (void *customer_id)
 		{
 			PlaceNextRejected(id);
 		}
-		pthread_mutex_unlock(&mutex_queue);
+		error = pthread_mutex_unlock(&mutex_queue);
+		if(error != 0)
+		{
+			printf("%s %d\n", "Mutex unlock error:", error);
+			exit(EXIT_FAILURE);
+		}
 	}
 }
 
@@ -175,35 +207,78 @@ void *Barber()
 	int id;
 	while(finished == false)
 	{
-		pthread_mutex_lock(&mutex_queue);
+		error = pthread_mutex_lock(&mutex_queue);
+		if(error != 0)
+		{
+			printf("%s %d\n", "Mutex lock error:", error);
+			exit(EXIT_FAILURE);
+		}
 		while (queue_length <= 0 && finished == false)
 		{
+			// nie było klientów, fryzjer poszedł spać i czeka na obudzenie
 			pthread_cond_wait(&wake_barber, &mutex_queue);
+			// fryzjer został obudzony
 		}
 		if(finished == false)
 		{
 			queue_length--;
 			id = PopWaiting();
-			pthread_mutex_lock(&mutex_next[id]);
+			error = pthread_mutex_lock(&mutex_next[id]);
+			if(error != 0)
+			{
+				printf("%s %d\n", "Mutex lock error:", error);
+				exit(EXIT_FAILURE);
+			}
 			next_cut[id] = true;
-			pthread_cond_broadcast(&call_customer[id]);
-			pthread_mutex_unlock(&mutex_next[id]);
+			// fryzjer wzywa pierwszego klienta z kolejki na fotel
+			error = pthread_cond_broadcast(&call_customer[id]);
+			if(error != 0)
+			{
+				printf("%s %d\n", "Conditional variable broadcast error:", error);
+				exit(EXIT_FAILURE);
+			}
+			error = pthread_mutex_unlock(&mutex_next[id]);
+			if(error != 0)
+			{
+				printf("%s %d\n", "Mutex unlock error:", error);
+				exit(EXIT_FAILURE);
+			}
 			being_cut = id;
 			printf("Res: %d WRoom: %d/%d [in: %d] - starting haircutting.\n",
 				rejected_number, queue_length, chairs_number, being_cut);
 			WriteWaiting();
-			pthread_mutex_unlock(&mutex_queue);
+			error = pthread_mutex_unlock(&mutex_queue);
+			if(error != 0)
+			{
+				printf("%s %d\n", "Mutex unlock error:", error);
+				exit(EXIT_FAILURE);
+			}
 
 			// WaitTime(haircut_time);
 
-			pthread_mutex_lock(&mutex_print);
+			error = pthread_mutex_lock(&mutex_print);
+			if(error != 0)
+			{
+				printf("%s %d\n", "Mutex lock error:", error);
+				exit(EXIT_FAILURE);
+			}
 			printf("Res: %d WRoom: %d/%d [in: %d] - haircut finished.\n",
 				rejected_number, queue_length, chairs_number, being_cut);
-			pthread_mutex_unlock(&mutex_print);
+			error = pthread_mutex_unlock(&mutex_print);
+			if(error != 0)
+			{
+				printf("%s %d\n", "Mutex unlock error:", error);
+				exit(EXIT_FAILURE);
+			}
 		}
 		else
 		{
-			pthread_mutex_unlock(&mutex_queue);
+			error = pthread_mutex_unlock(&mutex_queue);
+			if(error != 0)
+			{
+				printf("%s %d\n", "Mutex unlock error:", error);
+				exit(EXIT_FAILURE);
+			}
 			printf("No more customers.\n");
 		}
 	}
@@ -223,7 +298,6 @@ int main(int argc, char *argv[])
 	};
 	int customers_number = 20;
 	int choice = 0;
-	int error;
 	while((choice = getopt_long(argc, argv, "k:r:c:f:d",parameters,NULL)) != -1)
 	{
 		switch(choice)
@@ -335,8 +409,6 @@ int main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
 
-	sleep(1);
-
 	for(i=0; i<customers_number; ++i)
 	{
 		error = pthread_create(&customersThreads[i], NULL, Customer, (void *)&array[i]);
@@ -358,9 +430,25 @@ int main(int argc, char *argv[])
 	finished = true;
 
 	// signaling the barber so they can check variable finished and go home
-	pthread_mutex_lock(&mutex_queue);
-	pthread_cond_broadcast(&wake_barber);
-	pthread_mutex_unlock(&mutex_queue);
+
+	error = pthread_mutex_lock(&mutex_queue);
+	if(error != 0)
+	{
+		printf("%s %d\n", "Mutex lock error:", error);
+		exit(EXIT_FAILURE);
+	}
+	error = pthread_cond_broadcast(&wake_barber);
+	if(error != 0)
+	{
+		printf("%s %d\n", "Conditional variable broadcast error:", error);
+		exit(EXIT_FAILURE);
+	}
+	error = pthread_mutex_unlock(&mutex_queue);
+	if(error != 0)
+	{
+		printf("%s %d\n", "Mutex unlock error:", error);
+		exit(EXIT_FAILURE);
+	}
 
 	error = pthread_join(barberThread, NULL);
 	if(error != 0)
