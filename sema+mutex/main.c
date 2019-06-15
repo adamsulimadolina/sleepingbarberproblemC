@@ -61,7 +61,7 @@ void PlaceNextRejected(int id)
 	struct List *temp = (struct List*)malloc(sizeof(struct List));
 	if(temp == NULL)
 	{
-		perror("Can't allocate memory Place next rejected");
+		perror("Can't allocate memory for PlaceNextRejected");
 		exit(EXIT_FAILURE);
 	}
 	temp->customer_id = id;
@@ -75,7 +75,7 @@ void PlaceNextWaiting(int id)
 	struct List *temp = (struct List*)malloc(sizeof(struct List));
 	if(temp == NULL)
 	{
-		perror("Can't allocate memory PlaceNextWaiting");
+		perror("Can't allocate memory for PlaceNextWaiting");
 		exit(EXIT_FAILURE);
 	}
 	temp->customer_id = id;
@@ -88,11 +88,6 @@ void RemoveCustomer(int id)
 {
 	struct List *temp = waiting;
 	struct List *pop = waiting;
-	if(temp == NULL)
-	{
-		perror("Can't remove customer");
-		exit(EXIT_FAILURE);
-	}
 	while(temp!=NULL)
 	{
 		if(temp->customer_id==id)
@@ -100,11 +95,13 @@ void RemoveCustomer(int id)
 			if(temp->customer_id == waiting->customer_id)
 			{
 				waiting = waiting->next;
+				temp = NULL;
 				free(temp);
 			}
 			else
 			{
 				pop->next = temp->next;
+				temp = NULL;
 				free(temp);
 			}
 			break;
@@ -118,11 +115,6 @@ void RemoveCustomer(int id)
 int Top()
 {
 	struct List *tmp = waiting;
-	if(tmp == NULL)
-	{
-		perror("Can't top");
-		//exit(EXIT_FAILURE);
-	}
 	while(tmp->next!=NULL)
 	{
 		tmp=tmp->next;
@@ -311,9 +303,7 @@ int main(int argc, char *argv[])
 		perror("\n\nEXIT -> Can't destroy barber semaphore");
 		exit(EXIT_FAILURE);
 	}
-	//if(waiting != NULL)
-	//free(waiting);
-	//if(rejected != NULL)
-	//free(rejected);
+	free(waiting);
+	free(rejected);
 	return 0;
 }
