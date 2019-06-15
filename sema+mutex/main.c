@@ -28,7 +28,7 @@ volatile int being_cut = -1;
 sem_t *call_customer;
 sem_t wake_barber;
 pthread_mutex_t mutex_customer;
-pthread_mutex_t mutex_barber;
+pthread_mutex_t mutex_queue;
 
 void WaitTime(int time)
 {
@@ -72,7 +72,10 @@ void PlaceNextRejected(int id)
 	}
 	else
 	{
-		while(temp -> next != NULL);
+		while(temp -> next != NULL)
+		{
+			temp = temp -> next;
+		}
 		temp -> next = new;
 	}
     WriteRejected();
@@ -90,7 +93,10 @@ void PlaceNextWaiting(int id)
 	}
 	else
 	{
-		while(temp -> next != NULL);
+		while(temp -> next != NULL)
+		{
+			temp = temp -> next;
+		}
 		temp -> next = new;
 	}
 	printf("Res: %d WRoom: %d/%d [in: %d] - place in waiting room has been taken.\n",
@@ -118,12 +124,12 @@ void *Customer (void *customer_id)
 {
 	// WaitTime(customer_time);
 	int id = *(int*)customer_id;
-	pthread_mutex_lock(&mutex_barber);
+	pthread_mutex_lock(&mutex_queue);
 	if(queue_length<chairs_number)
 	{
 		queue_length++;
 		PlaceNextWaiting(id);
-		pthread_mutex_unlock(&mutex_barber);
+		pthread_mutex_unlock(&mutex_queue);
 		sem_post(&wake_barber);
 		sem_wait(&call_customer[id]);
 	}
@@ -136,7 +142,7 @@ void *Customer (void *customer_id)
 		{
 			PlaceNextRejected(id);
 		}
-		pthread_mutex_unlock(&mutex_barber);
+		pthread_mutex_unlock(&mutex_queue);
 	}
 }
 
@@ -146,19 +152,19 @@ void *Barber()
 	while(finished == false)
 	{
 		sem_wait(&wake_barber);
-		pthread_mutex_lock(&mutex_barber);
+		pthread_mutex_lock(&mutex_queue);
 		queue_length--;
 		id = PopWaiting();
 		being_cut = id;
 		printf("Res: %d WRoom: %d/%d [in: %d] - starting haircutting.\n",
-		rejected_number, queue_length, chairs_number, being_cut);
-		pthread_mutex_unlock(&mutex_barber);
+			rejected_number, queue_length, chairs_number, being_cut);
+		pthread_mutex_unlock(&mutex_queue);
 		sem_post(&call_customer[id]);
 		// WaitTime(haircut_time);
-		pthread_mutex_lock(&mutex_barber);
+		pthread_mutex_lock(&mutex_queue);
 		printf("Res: %d WRoom: %d/%d [in: %d] - haircut finished.\n",
-		rejected_number, queue_length, chairs_number, being_cut);
-		pthread_mutex_unlock(&mutex_barber);
+			rejected_number, queue_length, chairs_number, being_cut);
+		pthread_mutex_unlock(&mutex_queue);
 	}
 	printf("Barber is going to his home.\n");
 }
@@ -214,7 +220,7 @@ int main(int argc, char *argv[])
 	sem_init(&wake_barber, 0, 0);
 
 	pthread_mutex_init(&mutex_customer, NULL);
-	pthread_mutex_init(&mutex_barber, NULL);
+	pthread_mutex_init(&mutex_queue, NULL);
 
 	pthread_create(&barberThread, NULL, Barber, NULL);
 
@@ -231,7 +237,7 @@ int main(int argc, char *argv[])
 	finished = true;
 	pthread_join(barberThread, NULL);
 	pthread_mutex_destroy(&mutex_customer);
-	pthread_mutex_destroy(&mutex_barber);
+	pthread_mutex_destroy(&mutex_queue);
     for(i=0; i<customers_number; ++i)
     {
         sem_destroy(&call_customer[i]);
