@@ -28,11 +28,19 @@ int activeCustomer = -1; // variable which contains active customer's id, -1 if 
 struct List *rejected = NULL; // list of customers that did not enter waiting room
 struct List *waiting = NULL; // list of customers that entered waiting room
 
-void WriteList(struct List *start) //function that prints list of customers/rejected people
+void WriteList(int choice) //function that prints list of customers/rejected people
 {
-	struct List *temp = start;
-	if(start == rejected) printf("\nCustomers that did not enter waiting room: ");
-	else printf("\nCustomers that are waiting in the waiting room: ");
+	struct List *temp = NULL;
+	if(choice == 0)
+	{
+		printf("\nCustomers that did not enter waiting room: ");
+		temp = rejected;
+	}
+	if(choice == 1)
+	{
+		printf("\nCustomers that are waiting in the waiting room: ");
+		temp = waiting;
+	}
 	while(temp!=NULL)
 	{
 		printf("%d ", temp->customer_id);
@@ -43,16 +51,19 @@ void WriteList(struct List *start) //function that prints list of customers/reje
 
 void PlaceNextRejected(int id) // places next rejected person on the list
 {
-	struct List *temp = (struct List*)malloc(sizeof(struct List));
-	if(temp == NULL)
+	if(debug==true)
 	{
-		perror("Can't allocate memory for PlaceNextRejected");
-		exit(EXIT_FAILURE);
+		struct List *temp = (struct List*)malloc(sizeof(struct List));
+		if(temp == NULL)
+		{
+			perror("Can't allocate memory for PlaceNextRejected");
+			exit(EXIT_FAILURE);
+		}
+		temp->customer_id = id;
+		temp->next = rejected;
+		rejected = temp;
+		WriteList(0);
 	}
-	temp->customer_id = id;
-	temp->next = rejected;
-	rejected = temp;
-	if(debug==true)WriteList(rejected);
 }
 
 void PlaceNextWaiting(int id) // places next person in waiting room
@@ -66,7 +77,7 @@ void PlaceNextWaiting(int id) // places next person in waiting room
 	temp->customer_id = id;
 	temp->next = waiting;
 	waiting = temp;
-	if(debug==true)WriteList(waiting);
+	if(debug==true)WriteList(1);
 }
 
 void RemoveCustomer(int id) // removes customer from waiting room, he is getting haircut
@@ -94,7 +105,7 @@ void RemoveCustomer(int id) // removes customer from waiting room, he is getting
 		pop = temp;
 		temp = temp->next;
 	}
-	if(debug==true)WriteList(waiting);
+	if(debug==true)WriteList(1);
 }
 
 int Top() // returns id of actual customer
@@ -114,7 +125,7 @@ void WaitTime(int time)
 
 void *Customer (void *customer_id)
 {
-
+	//WaitTime(6);
 	int id = *(int*)customer_id;
 	error = pthread_mutex_lock(&waitingRoom); // waiting room lock
 	if(error!=0)
@@ -181,8 +192,7 @@ void *Barber()
 			activeCustomer = Top(); // setting active customer to first from top of the queue
 			customersCounter++;
 			chairs++; // frees one of the waiting room chairs
-			printf("Res: %d WRoom: %d/%d [in: %d] - getting haircut.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
-			//WaitTime();
+			printf("Res: %d WRoom: %d/%d [in: %d] - starting haircut.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
 			RemoveCustomer(activeCustomer); // removing customer from waiting room queue
 			sem_post(&barber); // signal that he finished haircut
 			if(error!=0)
@@ -196,6 +206,22 @@ void *Barber()
 				perror("EXIT -> Error with unlocking waiting room");
 				exit(EXIT_FAILURE);
 			}
+			//WaitTime(4);
+			error = pthread_mutex_lock(&waitingRoom); // waiting room lock
+			if(error!=0)
+			{
+				perror("EXIT -> Error with locking waiting room");
+				exit(EXIT_FAILURE);
+			}
+			printf("Res: %d WRoom: %d/%d [in: %d] - haircut finished.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
+			activeCustomer = -1;
+			pthread_mutex_unlock(&waitingRoom); // waiting room unlock
+			if(error!=0)
+			{
+				perror("EXIT -> Error with unlocking waiting room");
+				exit(EXIT_FAILURE);
+			}
+
 
 		}
 		else
@@ -281,7 +307,6 @@ int main(int argc, char *argv[])
 	}
 	for(i=0; i<numberOfCustomers; ++i)
 	{
-		//WaitTime();
 		status = pthread_create(&customersThreads[i], NULL, Customer, (void *)&array[i]);
 		if(status != 0)
 		{
