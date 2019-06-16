@@ -140,7 +140,8 @@ int PopWaiting()
 
 void *Customer (void *customer_id)
 {
-	// WaitTime(customer_time);
+	// czas przed wejściem klienta do salonu fryzjerskiego
+	WaitTime(customer_time);
 	int id = *(int*)customer_id;
 	error = pthread_mutex_lock(&mutex_queue);
 	if(error != 0)
@@ -215,7 +216,6 @@ void *Barber()
 		}
 		while (queue_length <= 0 && finished == false)
 		{
-			// nie było klientów, fryzjer poszedł spać i czeka na obudzenie
 			pthread_cond_wait(&wake_barber, &mutex_queue);
 			// fryzjer został obudzony
 		}
@@ -257,7 +257,8 @@ void *Barber()
 				exit(EXIT_FAILURE);
 			}
 
-			// WaitTime(haircut_time);
+			// w tym momencie trwa strzyżenie
+			WaitTime(haircut_time);
 
 			error = pthread_mutex_lock(&mutex_print);
 			if(error != 0)
@@ -267,6 +268,7 @@ void *Barber()
 			}
 			printf("Res: %d WRoom: %d/%d [in: %d] - haircut finished.\n",
 				rejected_number, queue_length, chairs_number, being_cut);
+			being_cut = -1;
 			error = pthread_mutex_unlock(&mutex_print);
 			if(error != 0)
 			{
