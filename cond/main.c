@@ -22,7 +22,7 @@ int error;
 
 volatile int queue_length = 0;
 int chairs_number = 10;
-int customer_time = 8;
+int customer_time = 10;
 int haircut_time = 2;
 int rejected_number = 0;
 bool debug = false;
@@ -297,8 +297,6 @@ int main(int argc, char *argv[])
 	{
 		{"customer", required_argument, NULL, 'k'},
 		{"chair", required_argument, NULL, 'r'},
-		{"time_c", required_argument, NULL, 'c'},
-		{"time_b", required_argument, NULL, 'b'},
 		{"debug", no_argument, NULL, 'd'}
 	};
 	int customers_number = 20;
@@ -312,12 +310,6 @@ int main(int argc, char *argv[])
 						break;
 			case 'r': // number of chairs in waiting room
 						chairs_number = atoi(optarg);
-						break;
-			case 'c': // frequency of appending new customer
-						customer_time = atoi(optarg);
-						break;
-			case 'b': // time of single haircut
-						haircut_time = atoi(optarg);
 						break;
 			case 'd':
 						debug=true;
