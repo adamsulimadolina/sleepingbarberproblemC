@@ -130,7 +130,7 @@ void WaitTime(int time)
 
 void *Customer (void *customer_id)
 {
-	//WaitTime(6);
+	WaitTime(10);
 	int id = *(int*)customer_id;
 	error = pthread_mutex_lock(&waitingRoom); // waiting room lock
 	if(error!=0)
@@ -211,7 +211,7 @@ void *Barber()
 				perror("EXIT -> Error with unlocking waiting room");
 				exit(EXIT_FAILURE);
 			}
-			//WaitTime(4);
+			WaitTime(2);
 			error = pthread_mutex_lock(&waitingRoom); // waiting room lock
 			if(error!=0)
 			{
