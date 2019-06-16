@@ -246,7 +246,10 @@ void *Barber()
 			being_cut = id;
 			printf("Res: %d WRoom: %d/%d [in: %d] - starting haircutting.\n",
 				rejected_number, queue_length, chairs_number, being_cut);
-			WriteWaiting();
+			if(debug == true)
+			{
+				WriteWaiting();
+			}
 			error = pthread_mutex_unlock(&mutex_queue);
 			if(error != 0)
 			{
