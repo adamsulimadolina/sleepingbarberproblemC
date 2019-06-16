@@ -46,26 +46,26 @@ void WaitTime(int time)
 
 void WriteRejected()
 {
-	printf("\n----------------Customers that did not enter waiting room: ");
+	printf("----------------Customers that did not enter waiting room: ");
 	struct List *temp = rejected;
 	while(temp != NULL)
 	{
 		printf("%d ", temp -> customer_id);
 		temp = temp -> next;
 	}
-	printf("\n\n");
+	printf("\n");
 }
 
 void WriteWaiting()
 {
-	printf("\n---------------Customers that are waiting in waiting room: ");
+	printf("---------------Customers that are waiting in waiting room: ");
 	struct List *temp = queue;
 	while(temp != NULL)
 	{
 		printf("%d ", temp -> customer_id);
 		temp = temp -> next;
 	}
-	printf("\n\n");
+	printf("\n");
 }
 
 void PlaceNextRejected(int id)
@@ -284,9 +284,9 @@ void *Barber()
 				printf("%s %d\n", "Mutex unlock error:", error);
 				exit(EXIT_FAILURE);
 			}
-			printf("No more customers.\n");
 		}
 	}
+	printf("No more customers.\n");
 	printf("Barber is going to his home.\n");
 }
 
