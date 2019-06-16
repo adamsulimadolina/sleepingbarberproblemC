@@ -278,7 +278,7 @@ int main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
 
-	if((customer = malloc(sizeof(pthread_mutex_t)*numberOfCustomers))==NULL)
+	if((customer = malloc(sizeof(sem_t)*numberOfCustomers))==NULL)
 	{
 		perror("\n\nEXIT -> Can't allocate memory for mutex array.");
 		exit(EXIT_FAILURE);
@@ -347,7 +347,6 @@ int main(int argc, char *argv[])
 	}
 	for(i=0; i<numberOfCustomers; i++)
 	{
-		array[i] = i;
 		status = sem_destroy(&customer[i]);
 		if(status != 0)
 		{
