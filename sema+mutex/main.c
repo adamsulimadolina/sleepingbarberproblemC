@@ -13,237 +13,354 @@ struct List
 	struct List *next;
 };
 
-struct List *rejected = NULL;
-struct List *queue = NULL;
+sem_t *customer; // post when customer comes to waiting room
+sem_t barber; // post when barber finishes haircut
+pthread_mutex_t waitingRoom; // lock waiting room to protect from races
+int error;
+int customersCounter=0; // customers Counter
+int chairs = 10; // number of free chairs in waiting room
+int waitingRoomSize = 10; // number of all chairs in waiting room
+int peopleRejected = 0; // number of peiple who didn't find place in waiting room
+bool debug = false; // boolean variable which allows to write lists
+bool finished = false; // boolean variable which determine if barber finished his work
+int activeCustomer = -1; // variable which contains active customer's id, -1 if no one is active
 
-volatile int queue_length = 0;
-int chairs_number = 10;
-int customer_time = 8;
-int haircut_time = 2;
-int rejected_number = 0;
-bool debug = false;
-bool finished = false;
-volatile int being_cut = -1;
+struct List *rejected = NULL; // list of customers that did not enter waiting room
+struct List *waiting = NULL; // list of customers that entered waiting room
 
-sem_t *call_customer;
-sem_t wake_barber;
-pthread_mutex_t mutex_customer;
-pthread_mutex_t mutex_queue;
+void WriteList(int choice) //function that prints list of customers/rejected people
+{
+	struct List *temp = NULL;
+	if(choice == 0)
+	{
+		printf("\nCustomers that did not enter waiting room: ");
+		temp = rejected;
+	}
+	if(choice == 1)
+	{
+		printf("\nCustomers that are waiting in the waiting room: ");
+		temp = waiting;
+	}
+	while(temp!=NULL)
+	{
+		printf("%d ", temp->customer_id);
+		temp = temp->next;
+	}
+	printf("\n\n");
+}
 
+void PlaceNextRejected(int id) // places next rejected person on the list
+{
+	if(debug==true)
+	{
+		struct List *temp = (struct List*)malloc(sizeof(struct List));
+		if(temp == NULL)
+		{
+			perror("Can't allocate memory for PlaceNextRejected");
+			exit(EXIT_FAILURE);
+		}
+		temp->customer_id = id;
+		temp->next = rejected;
+		rejected = temp;
+		WriteList(0);
+	}
+}
+
+void PlaceNextWaiting(int id) // places next person in waiting room
+{
+	struct List *temp = (struct List*)malloc(sizeof(struct List));
+	if(temp == NULL)
+	{
+		perror("Can't allocate memory for PlaceNextWaiting");
+		exit(EXIT_FAILURE);
+	}
+	temp->customer_id = id;
+	temp->next = waiting;
+	waiting = temp;
+	if(debug==true)WriteList(1);
+}
+
+void RemoveCustomer(int id) // removes customer from waiting room, he is getting haircut
+{
+	struct List *temp = waiting;
+	struct List *pop = waiting;
+	while(temp!=NULL)
+	{
+		if(temp->customer_id==id)
+		{
+			if(temp->customer_id == waiting->customer_id)
+			{
+				waiting = waiting->next;
+				temp = NULL;
+				free(temp);
+			}
+			else
+			{
+				pop->next = temp->next;
+				temp = NULL;
+				free(temp);
+			}
+			break;
+		}
+		pop = temp;
+		temp = temp->next;
+	}
+	if(debug==true)WriteList(1);
+}
+
+int Top() // returns id of actual customer
+{
+	struct List *tmp = waiting;
+	if(tmp == NULL)
+	{
+		printf("That shouldn't have happened\n");
+		exit(EXIT_FAILURE);
+	}
+	while(tmp->next!=NULL)
+	{
+		tmp=tmp->next;
+	}
+	return tmp->customer_id;
+}
 void WaitTime(int time)
 {
 	int x = (rand()%time) * (rand()%1000000) + 1000000;
 	usleep(x);
 }
 
-void WriteRejected()
-{
-	printf("Customers that did not enter waiting room: ");
-	struct List *temp = rejected;
-	while(temp != NULL)
-	{
-		printf("%d ", temp -> customer_id);
-		temp = temp -> next;
-	}
-	printf("\n");
-}
-
-void WriteWaiting()
-{
-	printf("Customers that are waiting in waiting room: ");
-	struct List *temp = queue;
-	while(temp != NULL)
-	{
-		printf("%d ", temp -> customer_id);
-		temp = temp -> next;
-	}
-	printf("\n");
-}
-
-void PlaceNextRejected(int id)
-{
-	struct List *new = (struct List*)malloc(sizeof(struct List));
-	new -> customer_id = id;
-	new -> next = NULL;
-	struct List *temp = rejected;
-	if(temp == NULL)
-	{
-		rejected = new;
-	}
-	else
-	{
-		while(temp -> next != NULL)
-		{
-			temp = temp -> next;
-		}
-		temp -> next = new;
-	}
-    WriteRejected();
-}
-
-void PlaceNextWaiting(int id)
-{
-	struct List *new = (struct List*)malloc(sizeof(struct List));
-	new -> customer_id = id;
-	new -> next = NULL;
-	struct List *temp = queue;
-	if(temp == NULL)
-	{
-		queue = new;
-	}
-	else
-	{
-		while(temp -> next != NULL)
-		{
-			temp = temp -> next;
-		}
-		temp -> next = new;
-	}
-	printf("Res: %d WRoom: %d/%d [in: %d] - place in waiting room has been taken.\n",
-		rejected_number, queue_length, chairs_number, being_cut);
-	if(debug == true)
-	{
-		WriteWaiting();
-	}
-}
-
-int PopWaiting()
-{
-    struct List *temp = queue;
-    if(temp == NULL)
-    {
-        return -1;
-    }
-    int id = temp -> customer_id;
-	queue = temp -> next;
-    free(temp);
-	return id;
-}
-
 void *Customer (void *customer_id)
 {
-	// WaitTime(customer_time);
+	WaitTime(10);
 	int id = *(int*)customer_id;
-	pthread_mutex_lock(&mutex_queue);
-	if(queue_length<chairs_number)
+	error = pthread_mutex_lock(&waitingRoom); // waiting room lock
+	if(error!=0)
 	{
-		queue_length++;
-		PlaceNextWaiting(id);
-		pthread_mutex_unlock(&mutex_queue);
-		sem_post(&wake_barber);
-		sem_wait(&call_customer[id]);
+		perror("EXIT -> Error with locking waiting room");
+		exit(EXIT_FAILURE);
+	}
+	if(chairs>0)
+	{
+		chairs--;
+		printf("Res: %d WRoom: %d/%d [in: %d] - place in waiting room has been taken.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
+		PlaceNextWaiting(id); // adding customer to queue
+		error = sem_post(&barber); // signal for barber that he have customer
+		if(error!=0)
+		{
+			perror("EXIT -> Error with posting barber semaphore");
+			exit(EXIT_FAILURE);
+		}
+		error = pthread_mutex_unlock(&waitingRoom); // waiting room unlock
+		if(error!=0)
+		{
+			perror("EXIT -> Error with unlocking waiting room");
+			exit(EXIT_FAILURE);
+		}
+
+		error = sem_wait(&customer[id]); // waiting for signal from barber that he finished haircut
+		if(error!=0)
+		{
+			perror("EXIT -> Error with waiting for customer semaphore");
+			exit(EXIT_FAILURE);
+		}
 	}
 	else
 	{
-		rejected_number++;
-		printf("Res: %d WRoom: %d/%d [in: %d] - customer did not enter.\n",
-			rejected_number, queue_length, chairs_number, being_cut);
-		if(debug == true)
+		peopleRejected++;
+		printf("Res: %d WRoom: %d/%d [in: %d] - customer did not enter.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
+		PlaceNextRejected(id); // adding person to rejected list
+		error = pthread_mutex_unlock(&waitingRoom); // waiting room unlock
+		if(error!=0)
 		{
-			PlaceNextRejected(id);
+			perror("EXIT -> Error with unlocking waiting room");
+			exit(EXIT_FAILURE);
 		}
-		pthread_mutex_unlock(&mutex_queue);
 	}
 }
 
 void *Barber()
 {
-	int id;
-	while(finished == false)
+	while(!finished) // while he did not finished job for today
 	{
-		sem_wait(&wake_barber);
-		pthread_mutex_lock(&mutex_queue);
-		queue_length--;
-		id = PopWaiting();
-		being_cut = id;
-		printf("Res: %d WRoom: %d/%d [in: %d] - starting haircutting.\n",
-			rejected_number, queue_length, chairs_number, being_cut);
-		pthread_mutex_unlock(&mutex_queue);
-		sem_post(&call_customer[id]);
-		// WaitTime(haircut_time);
-		pthread_mutex_lock(&mutex_queue);
-		printf("Res: %d WRoom: %d/%d [in: %d] - haircut finished.\n",
-			rejected_number, queue_length, chairs_number, being_cut);
-		pthread_mutex_unlock(&mutex_queue);
+		error = sem_wait(&barber); // waiting for signal, that he has ready customer
+		if(error!=0)
+		{
+			perror("EXIT -> Error with waiting for barber semaphore");
+			exit(EXIT_FAILURE);
+		}
+		if(!finished){
+			error = pthread_mutex_lock(&waitingRoom); // waiting room lock
+			if(error!=0)
+			{
+				perror("EXIT -> Error with locking waiting room");
+				exit(EXIT_FAILURE);
+			}
+			activeCustomer = Top(); // setting active customer to first from top of the queue
+			customersCounter++;
+			chairs++; // frees one of the waiting room chairs
+			error = sem_post(&customer[activeCustomer]); // signal that he can start haircut
+			if(error!=0)
+			{
+				perror("EXIT -> Error with posting customer semaphore");
+				exit(EXIT_FAILURE);
+			}
+			printf("Res: %d WRoom: %d/%d [in: %d] - starting haircut.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
+			RemoveCustomer(activeCustomer); // removing customer from waiting room queue
+			error = pthread_mutex_unlock(&waitingRoom); // waiting room unlock
+			if(error!=0)
+			{
+				perror("EXIT -> Error with unlocking waiting room");
+				exit(EXIT_FAILURE);
+			}
+			WaitTime(2);
+			error = pthread_mutex_lock(&waitingRoom); // waiting room lock
+			if(error!=0)
+			{
+				perror("EXIT -> Error with locking waiting room");
+				exit(EXIT_FAILURE);
+			}
+			printf("Res: %d WRoom: %d/%d [in: %d] - haircut finished.\n", peopleRejected, waitingRoomSize-chairs, waitingRoomSize, activeCustomer);
+			activeCustomer = -1;
+			error = pthread_mutex_unlock(&waitingRoom); // waiting room unlock
+			if(error!=0)
+			{
+				perror("EXIT -> Error with unlocking waiting room");
+				exit(EXIT_FAILURE);
+			}
+
+
+		}
 	}
-	printf("Barber is going to his home.\n");
+	printf("\nBarber is going to his home. \nToday he earned some money, because he did haircut for %d people.\n",customersCounter);
 }
 
 int main(int argc, char *argv[])
 {
 	srand(time(NULL));
+	int status;
+	int numberOfCustomers = 20;
+	int choice = 0;
+	pthread_t barberThread;
+	pthread_t *customersThreads;
+	int *array;
+
 	static struct option parameters[] =
 	{
 		{"customer", required_argument, NULL, 'k'},
-		{"chair", required_argument, NULL, 'r'},
-		{"time_c", required_argument, NULL, 'c'},
-		{"time_b", required_argument, NULL, 'b'},
+		{"chairs", required_argument, NULL, 'r'},
 		{"debug", no_argument, NULL, 'd'}
 	};
-	int customers_number = 20;
-	int choice = 0;
-	while((choice = getopt_long(argc, argv, "k:r:c:f:d",parameters,NULL)) != -1)
+
+	while((choice = getopt_long(argc, argv, "k:f:d",parameters,NULL)) != -1)
 	{
 		switch(choice)
 		{
 			case 'k': // number of customers
-						customers_number = atoi(optarg);
+						numberOfCustomers = atoi(optarg);
 						break;
 			case 'r': // number of chairs in waiting room
-						chairs_number = atoi(optarg);
-						break;
-			case 'c': // frequency of appending new customer
-						customer_time = atoi(optarg);
-						break;
-			case 'b': // time of single haircut
-						haircut_time = atoi(optarg);
+						chairs = atoi(optarg);
+						waitingRoomSize = atoi(optarg);
 						break;
 			case 'd':
 						debug=true;
 						break;
 		}
 	}
+	if((customersThreads = malloc(sizeof(pthread_t)*numberOfCustomers))==NULL)
+	{
+		perror("\n\nEXIT -> Can't allocate memory for customer threads");
+		exit(EXIT_FAILURE);
+	}
 
-	pthread_t *customersThreads = (pthread_t *)malloc(sizeof(pthread_t) * customers_number);
-	pthread_t barberThread;
+	if((array = malloc(sizeof(int)*numberOfCustomers))==NULL)
+	{
+		perror("\n\nEXIT -> Can't allocate memory for threads array.");
+		exit(EXIT_FAILURE);
+	}
 
-	int *array = (int *)malloc(sizeof(int) * customers_number);
-    call_customer = (sem_t *)malloc(sizeof(sem_t) * customers_number);
+	if((customer = malloc(sizeof(sem_t)*numberOfCustomers))==NULL)
+	{
+		perror("\n\nEXIT -> Can't allocate memory for mutex array.");
+		exit(EXIT_FAILURE);
+	}
 
 	int i;
-	for(i=0; i<customers_number; i++)
+	for(i=0; i<numberOfCustomers; i++)
 	{
 		array[i] = i;
-        sem_init(&call_customer[i], 0, 0);
+		status = sem_init(&customer[i],0,0);
+		if(status != 0)
+		{
+			perror("\n\nEXIT -> Can't create customer semaphore");
+			exit(EXIT_FAILURE);
+		}
 	}
-
-	sem_init(&wake_barber, 0, 0);
-
-	pthread_mutex_init(&mutex_customer, NULL);
-	pthread_mutex_init(&mutex_queue, NULL);
-
-	pthread_create(&barberThread, NULL, Barber, NULL);
-
-	for(i=0; i<customers_number; ++i)
+	status = sem_init(&barber,0,0);
+	if(status != 0)
 	{
-		pthread_create(&customersThreads[i], NULL, Customer, (void *)&array[i]);
+		perror("\n\nEXIT -> Can't create barber semaphore");
+		exit(EXIT_FAILURE);
 	}
-
-	for(i=0; i<customers_number; ++i)
+	status = pthread_mutex_init(&waitingRoom, NULL);
+	if(status != 0)
 	{
-		pthread_join(customersThreads[i], NULL);
+		perror("\n\nEXIT -> Can't create waitingRoom mutex");
+		exit(EXIT_FAILURE);
 	}
-
+	status = pthread_create(&barberThread, NULL, Barber, NULL);
+	if(status != 0)
+	{
+		perror("\n\nEXIT -> Can't create barber thread");
+		exit(EXIT_FAILURE);
+	}
+	for(i=0; i<numberOfCustomers; ++i)
+	{
+		status = pthread_create(&customersThreads[i], NULL, Customer, (void *)&array[i]);
+		if(status != 0)
+		{
+			perror("\n\nEXIT -> Can't create customer thread");
+			exit(EXIT_FAILURE);
+		}
+	}
+	for(i=0; i<numberOfCustomers; ++i)
+	{
+		status = pthread_join(customersThreads[i], NULL);
+		if(status != 0)
+		{
+			perror("\n\nEXIT -> Can't join customer thread");
+			exit(EXIT_FAILURE);
+		}
+	}
 	finished = true;
-	pthread_join(barberThread, NULL);
-	pthread_mutex_destroy(&mutex_customer);
-	pthread_mutex_destroy(&mutex_queue);
-    for(i=0; i<customers_number; ++i)
-    {
-        sem_destroy(&call_customer[i]);
-    }
-	sem_destroy(&wake_barber);
+	sem_post(&barber);
+	status = pthread_join(barberThread, NULL);
+	if(status != 0)
+	{
+		perror("\n\nEXIT -> Can't join barber thread");
+		exit(EXIT_FAILURE);
+	}
+	status = pthread_mutex_destroy(&waitingRoom);
+	if(status != 0)
+	{
+		perror("\n\nEXIT -> Can't destroy waiting room mutex");
+		exit(EXIT_FAILURE);
+	}
+	for(i=0; i<numberOfCustomers; i++)
+	{
+		status = sem_destroy(&customer[i]);
+		if(status != 0)
+		{
+			perror("\n\nEXIT -> Can't destroy customer semaphore");
+			exit(EXIT_FAILURE);
+		}
+	}
+	status = sem_destroy(&barber);
+	if(status != 0)
+	{
+		perror("\n\nEXIT -> Can't destroy barber semaphore");
+		exit(EXIT_FAILURE);
+	}
+	free(waiting);
 	free(rejected);
-	free(queue);
 	return 0;
 }

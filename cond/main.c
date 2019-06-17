@@ -22,7 +22,7 @@ int error;
 
 volatile int queue_length = 0;
 int chairs_number = 10;
-int customer_time = 8;
+int customer_time = 10;
 int haircut_time = 2;
 int rejected_number = 0;
 bool debug = false;
@@ -32,7 +32,6 @@ volatile int being_cut = -1;
 
 pthread_cond_t *call_customer;
 pthread_cond_t wake_barber;
-pthread_cond_t empty_chair;
 
 pthread_mutex_t *mutex_next;
 pthread_mutex_t mutex_queue;
@@ -46,26 +45,26 @@ void WaitTime(int time)
 
 void WriteRejected()
 {
-	printf("\n----------------Customers that did not enter waiting room: ");
+	printf("----------------Customers that did not enter waiting room: ");
 	struct List *temp = rejected;
 	while(temp != NULL)
 	{
 		printf("%d ", temp -> customer_id);
 		temp = temp -> next;
 	}
-	printf("\n\n");
+	printf("\n");
 }
 
 void WriteWaiting()
 {
-	printf("\n---------------Customers that are waiting in waiting room: ");
+	printf("---------------Customers that are waiting in waiting room: ");
 	struct List *temp = queue;
 	while(temp != NULL)
 	{
 		printf("%d ", temp -> customer_id);
 		temp = temp -> next;
 	}
-	printf("\n\n");
+	printf("\n");
 }
 
 void PlaceNextRejected(int id)
@@ -176,7 +175,12 @@ void *Customer (void *customer_id)
 		while (next_cut[id] != true)
 		{
 			// klient czeka na wezwanie na fotel fryzjerski
-			pthread_cond_wait(&call_customer[id], &mutex_next[id]);
+			error = pthread_cond_wait(&call_customer[id], &mutex_next[id]);
+			if(error != 0)
+			{
+				printf("%s %d\n", "Conditional variable wait error:", error);
+				exit(EXIT_FAILURE);
+			}
 		}
 		error = pthread_mutex_unlock(&mutex_next[id]);
 		if(error != 0)
@@ -216,7 +220,12 @@ void *Barber()
 		}
 		while (queue_length <= 0 && finished == false)
 		{
-			pthread_cond_wait(&wake_barber, &mutex_queue);
+			error = pthread_cond_wait(&wake_barber, &mutex_queue);
+			if(error != 0)
+			{
+				printf("%s %d\n", "Conditional variable wait error:", error);
+				exit(EXIT_FAILURE);
+			}
 			// fryzjer został obudzony
 		}
 		if(finished == false)
@@ -284,9 +293,9 @@ void *Barber()
 				printf("%s %d\n", "Mutex unlock error:", error);
 				exit(EXIT_FAILURE);
 			}
-			printf("No more customers.\n");
 		}
 	}
+	printf("No more customers.\n");
 	printf("Barber is going to his home.\n");
 }
 
@@ -297,8 +306,6 @@ int main(int argc, char *argv[])
 	{
 		{"customer", required_argument, NULL, 'k'},
 		{"chair", required_argument, NULL, 'r'},
-		{"time_c", required_argument, NULL, 'c'},
-		{"time_b", required_argument, NULL, 'b'},
 		{"debug", no_argument, NULL, 'd'}
 	};
 	int customers_number = 20;
@@ -312,12 +319,6 @@ int main(int argc, char *argv[])
 						break;
 			case 'r': // number of chairs in waiting room
 						chairs_number = atoi(optarg);
-						break;
-			case 'c': // frequency of appending new customer
-						customer_time = atoi(optarg);
-						break;
-			case 'b': // time of single haircut
-						haircut_time = atoi(optarg);
 						break;
 			case 'd':
 						debug=true;
@@ -377,12 +378,6 @@ int main(int argc, char *argv[])
 	}
 
 	error = pthread_cond_init(&wake_barber, NULL);
-	if(error != 0)
-	{
-		printf("%s %d\n", "Conditional variable initialization error:", error);
-		exit(EXIT_FAILURE);
-	}
-	error = pthread_cond_init(&empty_chair, NULL);
 	if(error != 0)
 	{
 		printf("%s %d\n", "Conditional variable initialization error:", error);
@@ -490,12 +485,6 @@ int main(int argc, char *argv[])
 		}
     }
 	error = pthread_cond_destroy(&wake_barber);
-	if(error != 0)
-	{
-		printf("%s %d\n", "Conditional variable destruction error:", error);
-		exit(EXIT_FAILURE);
-	}
-	error = pthread_cond_destroy(&empty_chair);
 	if(error != 0)
 	{
 		printf("%s %d\n", "Conditional variable destruction error:", error);
